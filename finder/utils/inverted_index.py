@@ -2,10 +2,8 @@ import math
 from collections import defaultdict
 import re
 import nltk
-import numpy as np
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
-
 
 class InvertedIndex:
     def __init__(self):
@@ -21,7 +19,7 @@ class InvertedIndex:
         text = text.lower()
 
         # Remove non-alphanumeric characters and extra whitespaces
-        text = re.sub(r'[^a-z0-9\s]', '', text)
+        text = re.sub(r'[^a-z0-9\s*]', '', text)
         text = re.sub(r'\s+', ' ', text)
 
         # Remove stopwords
@@ -45,7 +43,7 @@ class InvertedIndex:
         self.num_documents += 1
         preprocessed_text = self.preprocess_text(text)
         tokens = self.tokenize_text(preprocessed_text)
-        # print(self.document_lengths, doc_id, tokens, self.document_lengths[doc_id])
+        #print(self.document_lengths, doc_id, tokens, self.document_lengths[doc_id])
         self.document_lengths[doc_id] = len(tokens)
         self.average_document_length += len(tokens)
 
@@ -63,19 +61,24 @@ class InvertedIndex:
 
         for term in query_terms:
             if term not in self.index:
+                # Perform a wildcard query if the term is a wildcard
+                if '*' in term:
+                    matching_terms = self.wildcard_query(term)
+                    for matching_term in matching_terms:
+                        idf = math.log(self.num_documents / len(self.index[matching_term]))
+                        for doc_id, term_frequency in self.index[matching_term]:
+                            tf_component = term_frequency * (1.0 / (1.0 + 0.5 + 1.5 * (self.document_lengths[doc_id] / self.average_document_length)))
+                            scores[doc_id] += idf * tf_component
                 continue
 
-            # Calculate IDF (Inverse Document Frequency)
             idf = math.log(self.num_documents / len(self.index[term]))
 
             for doc_id, term_frequency in self.index[term]:
-                # Calculate term frequency component
                 tf_component = term_frequency * (1.0 / (1.0 + 0.5 + 1.5 * (self.document_lengths[doc_id] / self.average_document_length)))
-
-                # Add to the document's score
                 scores[doc_id] += idf * tf_component
 
         return scores
+
     def rocchio_relevance_feedback(self, query, relevant_docs, irrelevant_docs, alpha, beta, gamma):
         # Calculate the initial document scores using BM25
         initial_scores = self.calculate_scores(query)
@@ -125,3 +128,14 @@ class InvertedIndex:
         expanded_query = ' '.join(top_terms)
 
         return expanded_query
+
+    def wildcard_query(self, term):
+        # Convert the wildcard term to a regular expression
+        pattern = term.replace('*', '.*')
+
+        matching_terms = []
+        for index_term in self.index.keys():
+            if re.match(pattern, index_term):
+                matching_terms.append(index_term)
+
+        return matching_terms
